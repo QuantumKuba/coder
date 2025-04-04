@@ -8,6 +8,27 @@ import SolutionCommands from "../components/Solutions/SolutionCommands"
 import { Screenshot } from "../types/screenshots"
 import { ComplexitySection, ContentSection } from "./Solutions"
 import { useToast } from "../contexts/toast"
+import { formatMarkdownBold } from "../lib/utils"
+
+// Helper function to render formatted markdown content
+const renderFormattedContent = (content: string) => {
+  if (!content) return null;
+  
+  const formatted = formatMarkdownBold(content);
+  
+  return formatted.map((item, index) => {
+    if (typeof item === 'string') {
+      return <React.Fragment key={index}>{item}</React.Fragment>;
+    } else if (item.type === 'bold') {
+      return (
+        <strong key={item.key} className="font-semibold">
+          {item.content}
+        </strong>
+      );
+    }
+    return null;
+  });
+};
 
 const CodeSection = ({
   title,
@@ -299,7 +320,7 @@ const Debug: React.FC<DebugProps> = ({
                       {thoughtsData.map((thought, index) => (
                         <div key={index} className="flex items-start gap-2">
                           <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
-                          <div>{thought}</div>
+                          <div>{renderFormattedContent(thought)}</div>
                         </div>
                       ))}
                     </div>
@@ -408,7 +429,7 @@ const Debug: React.FC<DebugProps> = ({
                                 <div key={lineIndex} className="flex items-start gap-2 my-1.5">
                                   <div className="w-1.5 h-1.5 rounded-full bg-blue-400/80 mt-2 shrink-0" />
                                   <div className="flex-1">
-                                    {line.replace(/^[\-*•]\s|^\d+\.\s/, '')}
+                                    {renderFormattedContent(line.replace(/^[\-*•]\s|^\d+\.\s/, ''))}
                                   </div>
                                 </div>
                               );
@@ -423,7 +444,7 @@ const Debug: React.FC<DebugProps> = ({
                                     if (part.startsWith('`') && part.endsWith('`')) {
                                       return <span key={partIndex} className="font-mono bg-black/30 px-1 py-0.5 rounded">{part.slice(1, -1)}</span>;
                                     }
-                                    return <span key={partIndex}>{part}</span>;
+                                    return <span key={partIndex}>{renderFormattedContent(part)}</span>;
                                   })}
                                 </div>
                               );
@@ -438,8 +459,8 @@ const Debug: React.FC<DebugProps> = ({
                               );
                             }
                             
-                            // Regular text
-                            return <div key={lineIndex} className="my-1.5">{line}</div>;
+                            // Regular text - apply bold formatting
+                            return <div key={lineIndex} className="my-1.5">{renderFormattedContent(line)}</div>;
                           })}
                         </div>
                       </div>

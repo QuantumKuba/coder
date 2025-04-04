@@ -11,6 +11,27 @@ import SolutionCommands from "../components/Solutions/SolutionCommands"
 import Debug from "./Debug"
 import { useToast } from "../contexts/toast"
 import { COMMAND_KEY } from "../utils/platform"
+import { formatMarkdownBold } from "../lib/utils"
+
+// Helper function to render formatted markdown content
+const renderFormattedContent = (content: string) => {
+  if (!content) return null;
+
+  const formatted = formatMarkdownBold(content);
+
+  return formatted.map((item, index) => {
+    if (typeof item === 'string') {
+      return <React.Fragment key={index}>{item}</React.Fragment>;
+    } else if (item.type === 'bold') {
+      return (
+        <strong key={item.key} className="font-semibold">
+          {item.content}
+        </strong>
+      );
+    }
+    return null;
+  });
+};
 
 export const ContentSection = ({
   title,
@@ -33,7 +54,7 @@ export const ContentSection = ({
       </div>
     ) : (
       <div className="text-[13px] leading-[1.4] text-gray-100 max-w-[600px]">
-        {content}
+        {typeof content === 'string' ? renderFormattedContent(content) : content}
       </div>
     )}
   </div>
@@ -512,7 +533,7 @@ const Solutions: React.FC<SolutionsProps> = ({
                                   className="flex items-start gap-2"
                                 >
                                   <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
-                                  <div>{thought}</div>
+                                  <div>{renderFormattedContent(thought)}</div>
                                 </div>
                               ))}
                             </div>
