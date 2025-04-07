@@ -13,6 +13,8 @@ export interface SolutionCommandsProps {
   credits: number
   currentLanguage: string
   setLanguage: (language: string) => void
+  isRefining?: boolean
+  onRefineSolution?: (type: 'time' | 'space' | 'both') => void
 }
 
 const handleSignOut = async () => {
@@ -35,10 +37,14 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
   extraScreenshots = [],
   credits,
   currentLanguage,
-  setLanguage
+  setLanguage,
+  isRefining = false,
+  onRefineSolution = () => {}
 }) => {
   const [isTooltipVisible, setIsTooltipVisible] = useState(false)
+  const [isRefinementMenuOpen, setIsRefinementMenuOpen] = useState(false)
   const tooltipRef = useRef<HTMLDivElement>(null)
+  const refinementMenuRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
 
   useEffect(() => {
@@ -50,6 +56,19 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
       onTooltipVisibilityChange(isTooltipVisible, tooltipHeight)
     }
   }, [isTooltipVisible, onTooltipVisibilityChange])
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (refinementMenuRef.current && !refinementMenuRef.current.contains(event.target as Node)) {
+        setIsRefinementMenuOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleMouseEnter = () => {
     setIsTooltipVisible(true)
@@ -121,6 +140,65 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                     H
                   </button>
                 </div>
+              </div>
+
+              {/* Refinement Feature */}
+              <div className="relative">
+                <div
+                  className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${isRefining ? 'animate-pulse bg-white/10' : ''}`}
+                  onClick={() => setIsRefinementMenuOpen(!isRefinementMenuOpen)}
+                >
+                  <span className="text-[11px] leading-none truncate">
+                    {isRefining ? "Refining..." : "Refine Solution"}
+                  </span>
+                  <div className="flex gap-1">
+                    <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+                      {COMMAND_KEY}
+                    </button>
+                    <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+                      O
+                    </button>
+                  </div>
+                </div>
+
+                {/* Refinement options dropdown */}
+                {isRefinementMenuOpen && (
+                  <div 
+                    ref={refinementMenuRef}
+                    className="absolute top-full left-0 mt-1 z-50 bg-black/90 backdrop-blur-md rounded-md border border-white/10 shadow-lg"
+                  >
+                    <div className="p-2 text-[11px] text-white/90">
+                      <div className="font-medium mb-2">Optimize For:</div>
+                      <div 
+                        className="px-3 py-2 hover:bg-white/10 rounded cursor-pointer"
+                        onClick={() => {
+                          onRefineSolution('time');
+                          setIsRefinementMenuOpen(false);
+                        }}
+                      >
+                        ⚡ Time Complexity
+                      </div>
+                      <div 
+                        className="px-3 py-2 hover:bg-white/10 rounded cursor-pointer"
+                        onClick={() => {
+                          onRefineSolution('space');
+                          setIsRefinementMenuOpen(false);
+                        }}
+                      >
+                        💾 Space Complexity
+                      </div>
+                      <div 
+                        className="px-3 py-2 hover:bg-white/10 rounded cursor-pointer"
+                        onClick={() => {
+                          onRefineSolution('both');
+                          setIsRefinementMenuOpen(false);
+                        }}
+                      >
+                        🔄 Both (Balance)
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {extraScreenshots.length > 0 && (
@@ -213,7 +291,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                 strokeLinejoin="round"
                 className="w-3.5 h-3.5"
               >
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1-1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1-1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </div>
@@ -321,6 +399,30 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                             <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
                               Capture additional parts of the question or your
                               solution for debugging help.
+                            </p>
+                          </div>
+
+                          {/* Refinement option in tooltip */}
+                          <div
+                            className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
+                            onClick={() => {
+                              setIsRefinementMenuOpen(true);
+                              setIsTooltipVisible(false);
+                            }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="truncate">Refine Solution</span>
+                              <div className="flex gap-1 flex-shrink-0">
+                                <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                                  {COMMAND_KEY}
+                                </span>
+                                <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                                  O
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
+                              Optimize your solution for better time or space complexity.
                             </p>
                           </div>
 

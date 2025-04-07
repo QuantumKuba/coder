@@ -1075,6 +1075,341 @@ If you include code examples, use proper markdown code blocks with language spec
     }
   }
 
+  /**
+   * Refine an existing solution based on specific optimization requirements
+   * This is used when the user wants to optimize their code for time/space complexity
+   */
+  public async refineSolution(optimizationType: 'time' | 'space' | 'both', prompt?: string): Promise<void> {
+    const mainWindow = this.deps.getMainWindow();
+    if (!mainWindow) return;
+
+    const config = configHelper.loadConfig();
+    
+    // First verify we have a valid AI client
+    if (config.apiProvider === "openai" && !this.openaiClient) {
+      this.initializeAIClient();
+      
+      if (!this.openaiClient) {
+        console.error("OpenAI client not initialized");
+        mainWindow.webContents.send(
+          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
+        );
+        return;
+      }
+    } else if (config.apiProvider === "gemini" && !this.geminiApiKey) {
+      this.initializeAIClient();
+      
+      if (!this.geminiApiKey) {
+        console.error("Gemini API key not initialized");
+        mainWindow.webContents.send(
+          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
+        );
+        return;
+      }
+    }
+
+    // Send an event that refinement has started
+    mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.REFINEMENT_START);
+
+    // Initialize AbortController
+    this.currentProcessingAbortController = new AbortController();
+    const { signal } = this.currentProcessingAbortController;
+
+    try {
+      const problemInfo = this.deps.getProblemInfo();
+      if (!problemInfo) {
+        throw new Error("No problem info available");
+      }
+
+      const currentSolution = await mainWindow.webContents.executeJavaScript(
+        "window.__CURRENT_SOLUTION__"
+      );
+
+      if (!currentSolution) {
+        throw new Error("No current solution available");
+      }
+
+      const result = await this.refineSolutionHelper(currentSolution, optimizationType, prompt, signal);
+      
+      if (result.success) {
+        mainWindow.webContents.send(
+          this.deps.PROCESSING_EVENTS.REFINEMENT_SUCCESS,
+          result.data
+        );
+      } else {
+        mainWindow.webContents.send(
+          this.deps.PROCESSING_EVENTS.REFINEMENT_ERROR,
+          result.error
+        );
+      }
+    } catch (error: any) {
+      console.error("Refinement error:", error);
+      if (axios.isCancel(error)) {
+        mainWindow.webContents.send(
+          this.deps.PROCESSING_EVENTS.REFINEMENT_ERROR,
+          "Refinement was canceled by the user."
+        );
+      } else {
+        mainWindow.webContents.send(
+          this.deps.PROCESSING_EVENTS.REFINEMENT_ERROR,
+          error.message || "Server error. Please try again."
+        );
+      }
+    } finally {
+      this.currentProcessingAbortController = null;
+    }
+  }
+
+  private async refineSolutionHelper(
+    currentSolution: any,
+    optimizationType: 'time' | 'space' | 'both',
+    prompt?: string,
+    signal?: AbortSignal
+  ) {
+    try {
+      const problemInfo = this.deps.getProblemInfo();
+      const language = await this.getLanguage();
+      const config = configHelper.loadConfig();
+      const mainWindow = this.deps.getMainWindow();
+
+      if (!problemInfo) {
+        throw new Error("No problem info available");
+      }
+
+      // Update progress status
+      if (mainWindow) {
+        mainWindow.webContents.send("processing-status", {
+          message: "Optimizing solution...",
+          progress: 30
+        });
+      }
+
+      // Build the optimization prompt based on the type requested
+      let optimizationPrompt = "";
+      if (optimizationType === 'time') {
+        optimizationPrompt = "Focus on optimizing the time complexity of the solution. Provide a detailed explanation of how the optimized solution improves the time complexity compared to the original.";
+      } else if (optimizationType === 'space') {
+        optimizationPrompt = "Focus on optimizing the space complexity of the solution. Provide a detailed explanation of how the optimized solution improves the space complexity compared to the original.";
+      } else {
+        optimizationPrompt = "Focus on optimizing both time and space complexity of the solution. Provide a detailed explanation of the trade-offs and improvements.";
+      }
+
+      // Add any custom prompt if provided
+      if (prompt) {
+        optimizationPrompt += ` Additional requirements: ${prompt}`;
+      }
+
+      // Create prompt for optimization
+      const promptText = `
+I need to optimize my solution to the following coding problem:
+
+PROBLEM STATEMENT:
+${problemInfo.problem_statement}
+
+CONSTRAINTS:
+${problemInfo.constraints || "No specific constraints provided."}
+
+CURRENT SOLUTION:
+\`\`\`${language}
+${currentSolution.code}
+\`\`\`
+
+CURRENT TIME COMPLEXITY: ${currentSolution.time_complexity}
+CURRENT SPACE COMPLEXITY: ${currentSolution.space_complexity}
+
+${optimizationPrompt}
+
+I need the optimized response in the following format:
+1. Code: A clean, optimized implementation in ${language}
+2. Your Thoughts: A list of key insights about the optimization approach
+3. Time complexity: O(X) with a detailed explanation (at least 2 sentences)
+4. Space complexity: O(X) with a detailed explanation (at least 2 sentences)
+
+For complexity explanations, be thorough and specifically compare with the original solution. Your solution should be efficient, well-commented, and handle edge cases.
+`;
+
+      let responseContent;
+      
+      if (mainWindow) {
+        mainWindow.webContents.send("processing-status", {
+          message: "Generating optimized solution...",
+          progress: 60
+        });
+      }
+      
+      if (config.apiProvider === "openai") {
+        // OpenAI processing
+        if (!this.openaiClient) {
+          return {
+            success: false,
+            error: "OpenAI API key not configured. Please check your settings."
+          };
+        }
+        
+        // Send to OpenAI API
+        const solutionResponse = await this.openaiClient.chat.completions.create({
+          model: config.solutionModel || "gpt-4o",
+          messages: [
+            { role: "system", content: "You are an expert coding interview assistant specializing in algorithm optimization. You provide clear, optimal solutions with detailed explanations about complexity improvements." },
+            { role: "user", content: promptText }
+          ],
+          max_tokens: 4000,
+          temperature: 0.2
+        });
+
+        responseContent = solutionResponse.choices[0].message.content;
+      } else {
+        // Gemini processing
+        if (!this.geminiApiKey) {
+          return {
+            success: false,
+            error: "Gemini API key not configured. Please check your settings."
+          };
+        }
+        
+        try {
+          // Create Gemini message structure
+          const geminiMessages = [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: `You are an expert coding interview assistant specializing in algorithm optimization. I need you to optimize this solution:\n\n${promptText}`
+                }
+              ]
+            }
+          ];
+
+          // Make API request to Gemini
+          const response = await axios.default.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+            {
+              contents: geminiMessages,
+              generationConfig: {
+                temperature: 0.2,
+                maxOutputTokens: 4000
+              }
+            },
+            { signal }
+          );
+
+          const responseData = response.data as GeminiResponse;
+          
+          if (!responseData.candidates || responseData.candidates.length === 0) {
+            throw new Error("Empty response from Gemini API");
+          }
+          
+          responseContent = responseData.candidates[0].content.parts[0].text;
+        } catch (error) {
+          console.error("Error using Gemini API for optimization:", error);
+          return {
+            success: false,
+            error: "Failed to generate optimized solution with Gemini API. Please check your API key or try again later."
+          };
+        }
+      }
+      
+      // Extract parts from the response
+      const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+      const code = codeMatch ? codeMatch[1].trim() : responseContent;
+      
+      // Extract thoughts, looking for bullet points or numbered lists
+      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:|Optimization Insights:)([\s\S]*?)(?:Time complexity:|$)/i;
+      const thoughtsMatch = responseContent.match(thoughtsRegex);
+      let thoughts: string[] = [];
+      
+      if (thoughtsMatch && thoughtsMatch[1]) {
+        // Extract bullet points or numbered items
+        const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
+        if (bulletPoints) {
+          thoughts = bulletPoints.map(point => 
+            point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
+          ).filter(Boolean);
+        } else {
+          // If no bullet points found, split by newlines and filter empty lines
+          thoughts = thoughtsMatch[1].split('\n')
+            .map(line => line.trim())
+            .filter(Boolean);
+        }
+      }
+      
+      // Extract complexity information
+      const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
+      const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
+      
+      let timeComplexity = currentSolution.time_complexity;
+      let spaceComplexity = currentSolution.space_complexity;
+      
+      const timeMatch = responseContent.match(timeComplexityPattern);
+      if (timeMatch && timeMatch[1]) {
+        timeComplexity = timeMatch[1].trim();
+        if (!timeComplexity.match(/O\([^)]+\)/i)) {
+          timeComplexity = `O(n) - ${timeComplexity}`;
+        } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
+          const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
+          if (notationMatch) {
+            const notation = notationMatch[0];
+            const rest = timeComplexity.replace(notation, '').trim();
+            timeComplexity = `${notation} - ${rest}`;
+          }
+        }
+      }
+      
+      const spaceMatch = responseContent.match(spaceComplexityPattern);
+      if (spaceMatch && spaceMatch[1]) {
+        spaceComplexity = spaceMatch[1].trim();
+        if (!spaceComplexity.match(/O\([^)]+\)/i)) {
+          spaceComplexity = `O(n) - ${spaceComplexity}`;
+        } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
+          const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
+          if (notationMatch) {
+            const notation = notationMatch[0];
+            const rest = spaceComplexity.replace(notation, '').trim();
+            spaceComplexity = `${notation} - ${rest}`;
+          }
+        }
+      }
+
+      if (mainWindow) {
+        mainWindow.webContents.send("processing-status", {
+          message: "Optimization complete",
+          progress: 100
+        });
+      }
+
+      const formattedResponse = {
+        code: code,
+        thoughts: thoughts.length > 0 ? thoughts : ["Optimization approach based on efficiency and improved complexity"],
+        time_complexity: timeComplexity,
+        space_complexity: spaceComplexity
+      };
+
+      return { success: true, data: formattedResponse };
+    } catch (error: any) {
+      if (axios.isCancel(error)) {
+        return {
+          success: false,
+          error: "Processing was canceled by the user."
+        };
+      }
+      
+      if (error?.response?.status === 401) {
+        return {
+          success: false,
+          error: "Invalid OpenAI API key. Please check your settings."
+        };
+      } else if (error?.response?.status === 429) {
+        return {
+          success: false,
+          error: "OpenAI API rate limit exceeded or insufficient credits. Please try again later."
+        };
+      }
+      
+      console.error("Solution optimization error:", error);
+      return { success: false, error: error.message || "Failed to optimize solution" };
+    }
+  }
+
   public cancelOngoingRequests(): void {
     let wasCancelled = false
 

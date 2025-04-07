@@ -55,7 +55,10 @@ const state = {
     INITIAL_SOLUTION_ERROR: "solution-error",
     DEBUG_START: "debug-start",
     DEBUG_SUCCESS: "debug-success",
-    DEBUG_ERROR: "debug-error"
+    DEBUG_ERROR: "debug-error",
+    REFINEMENT_START: "refinement-start",
+    REFINEMENT_SUCCESS: "refinement-success", 
+    REFINEMENT_ERROR: "refinement-error"
   } as const,
 
   // Screen share protection interval

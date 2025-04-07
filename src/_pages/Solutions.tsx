@@ -179,6 +179,8 @@ const Solutions: React.FC<SolutionsProps> = ({
   const contentRef = useRef<HTMLDivElement>(null)
 
   const [debugProcessing, setDebugProcessing] = useState(false)
+  const [isRefining, setIsRefining] = useState(false)
+  const [refinementType, setRefinementType] = useState<'time' | 'space' | 'both' | null>(null)
   const [problemStatementData, setProblemStatementData] =
     useState<ProblemStatementData | null>(null)
   const [solutionData, setSolutionData] = useState<string | null>(null)
@@ -388,14 +390,74 @@ const Solutions: React.FC<SolutionsProps> = ({
           "neutral"
         )
       }),
-      // Removed out of credits handler - unlimited credits in this version
+      //########################################################
+      //REFINEMENT EVENTS
+      //########################################################
+      window.electronAPI.onRefinementStart(() => {
+        setIsRefining(true);
+        showToast(
+          "Refinement Started",
+          `Optimizing ${refinementType === 'time' ? 'time' : refinementType === 'space' ? 'space' : 'time and space'} complexity...`,
+          "neutral"
+        );
+      }),
+      window.electronAPI.onRefinementSuccess((data) => {
+        if (!data) {
+          console.warn("Received empty or invalid refinement data");
+          setIsRefining(false);
+          return;
+        }
+        
+        console.log("Refinement successful:", data);
+        
+        // Update the solution data with the refined version
+        const refinedSolutionData = {
+          code: data.code,
+          thoughts: data.thoughts,
+          time_complexity: data.time_complexity,
+          space_complexity: data.space_complexity
+        };
+        
+        // Update the UI
+        setSolutionData(refinedSolutionData.code);
+        setThoughtsData(refinedSolutionData.thoughts);
+        setTimeComplexityData(refinedSolutionData.time_complexity);
+        setSpaceComplexityData(refinedSolutionData.space_complexity);
+        
+        // Store in query cache
+        queryClient.setQueryData(["solution"], refinedSolutionData);
+        
+        // Reset refinement state
+        setIsRefining(false);
+        setRefinementType(null);
+        
+        // Show success message
+        showToast(
+          "Refinement Complete",
+          "The solution has been optimized successfully!",
+          "success"
+        );
+        
+        // Set the current solution in a window variable so it can be accessed by the backend
+        window.__CURRENT_SOLUTION__ = refinedSolutionData;
+      }),
+      window.electronAPI.onRefinementError((error: string) => {
+        console.error("Refinement error:", error);
+        showToast(
+          "Refinement Failed",
+          error.message || "There was an error optimizing your solution.",
+          "error"
+        );
+        setIsRefining(false);
+        setRefinementType(null);
+      }),
     ]
 
     return () => {
       resizeObserver.disconnect()
       cleanupFunctions.forEach((cleanup) => cleanup())
     }
-  }, [isTooltipVisible, tooltipHeight])
+  }, [isTooltipVisible, tooltipHeight, refinementType])
 
   useEffect(() => {
     setProblemStatementData(
@@ -461,6 +523,51 @@ const Solutions: React.FC<SolutionsProps> = ({
     }
   }
 
+  // Handle solution refinement
+  const handleRefineSolution = async (type: 'time' | 'space' | 'both') => {
+    try {
+      if (!solutionData) {
+        showToast(
+          "No Solution", 
+          "There is no solution to refine. Generate a solution first.", 
+          "error"
+        );
+        return;
+      }
+
+      setRefinementType(type);
+      
+      // Store current solution in window variable for the backend to access
+      const currentSolution = {
+        code: solutionData,
+        thoughts: thoughtsData || [],
+        time_complexity: timeComplexityData || "O(n)",
+        space_complexity: spaceComplexityData || "O(n)"
+      };
+      
+      window.__CURRENT_SOLUTION__ = currentSolution;
+      
+      // Trigger the refinement process
+      const result = await window.electronAPI.refineSolution({ 
+        optimizationType: type
+      });
+      
+      if (!result.success) {
+        throw new Error(result.error || "Failed to start refinement process");
+      }
+      
+    } catch (error) {
+      console.error("Error triggering solution refinement:", error);
+      showToast(
+        "Refinement Error",
+        error.message || "Failed to start refinement process. Please try again.",
+        "error"
+      );
+      setIsRefining(false);
+      setRefinementType(null);
+    }
+  };
+
   return (
     <>
       {!isResetting && queryClient.getQueryData(["new_solution"]) ? (
@@ -496,6 +603,8 @@ const Solutions: React.FC<SolutionsProps> = ({
             credits={credits}
             currentLanguage={currentLanguage}
             setLanguage={setLanguage}
+            isRefining={isRefining}
+            onRefineSolution={handleRefineSolution}
           />
 
           {/* Main Content - Modified width constraints */}

@@ -19,7 +19,12 @@ export const PROCESSING_EVENTS = {
   //states for processing the debugging
   DEBUG_START: "debug-start",
   DEBUG_SUCCESS: "debug-success",
-  DEBUG_ERROR: "debug-error"
+  DEBUG_ERROR: "debug-error",
+  
+  //states for solution refinement
+  REFINEMENT_START: "refinement-start",
+  REFINEMENT_SUCCESS: "refinement-success",
+  REFINEMENT_ERROR: "refinement-error"
 } as const
 
 // At the top of the file
@@ -236,7 +241,32 @@ const electronAPI = {
       ipcRenderer.removeListener("delete-last-screenshot", subscription)
     }
   },
-  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot")
+  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot"),
+  
+  // Solution refinement methods
+  refineSolution: (params: { optimizationType: 'time' | 'space' | 'both', prompt?: string }) => 
+    ipcRenderer.invoke("refine-solution", params),
+  onRefinementStart: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on(PROCESSING_EVENTS.REFINEMENT_START, subscription);
+    return () => {
+      ipcRenderer.removeListener(PROCESSING_EVENTS.REFINEMENT_START, subscription);
+    };
+  },
+  onRefinementSuccess: (callback: (data: any) => void) => {
+    const subscription = (_: any, data: any) => callback(data);
+    ipcRenderer.on(PROCESSING_EVENTS.REFINEMENT_SUCCESS, subscription);
+    return () => {
+      ipcRenderer.removeListener(PROCESSING_EVENTS.REFINEMENT_SUCCESS, subscription);
+    };
+  },
+  onRefinementError: (callback: (error: string) => void) => {
+    const subscription = (_: any, error: string) => callback(error);
+    ipcRenderer.on(PROCESSING_EVENTS.REFINEMENT_ERROR, subscription);
+    return () => {
+      ipcRenderer.removeListener(PROCESSING_EVENTS.REFINEMENT_ERROR, subscription);
+    };
+  }
 }
 
 // Before exposing the API

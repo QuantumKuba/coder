@@ -348,4 +348,30 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       return { success: false, error: "Failed to delete last screenshot" }
     }
   })
+  
+  // Solution refinement handler
+  ipcMain.handle(
+    "refine-solution", 
+    async (
+      _event, 
+      { optimizationType, prompt }: { optimizationType: 'time' | 'space' | 'both', prompt?: string }
+    ) => {
+      try {
+        // Check for API key before processing
+        if (!configHelper.hasApiKey()) {
+          const mainWindow = deps.getMainWindow();
+          if (mainWindow) {
+            mainWindow.webContents.send(deps.PROCESSING_EVENTS.API_KEY_INVALID);
+          }
+          return { success: false, error: "API key required" };
+        }
+        
+        await deps.processingHelper?.refineSolution(optimizationType, prompt);
+        return { success: true };
+      } catch (error) {
+        console.error("Error refining solution:", error);
+        return { success: false, error: "Failed to refine solution" };
+      }
+    }
+  )
 }
