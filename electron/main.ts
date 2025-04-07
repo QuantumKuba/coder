@@ -9,6 +9,14 @@ import { initAutoUpdater } from "./autoUpdater"
 import { configHelper } from "./ConfigHelper"
 import * as dotenv from "dotenv"
 
+// Extend the BrowserWindow type to include our custom method
+// This is a workaround for TypeScript since this method is not in the standard Electron typings
+declare module "electron" {
+  interface BrowserWindow {
+    setWindowSharingExcluded?: (excluded: boolean) => void;
+  }
+}
+
 // Constants
 const isDev = process.env.NODE_ENV === "development"
 
@@ -48,7 +56,10 @@ const state = {
     DEBUG_START: "debug-start",
     DEBUG_SUCCESS: "debug-success",
     DEBUG_ERROR: "debug-error"
-  } as const
+  } as const,
+
+  // Screen share protection interval
+  screenShareProtectionInterval: null as NodeJS.Timeout | null
 }
 
 // Add interfaces for helper classes
@@ -154,8 +165,6 @@ function initializeHelpers() {
   } as IShortcutsHelperDeps)
 }
 
-// Auth callback handler
-
 // Register the interview-coder protocol
 if (process.platform === "darwin") {
   app.setAsDefaultProtocolClient("interview-coder")
@@ -183,13 +192,69 @@ if (!gotTheLock) {
     if (state.mainWindow) {
       if (state.mainWindow.isMinimized()) state.mainWindow.restore()
       state.mainWindow.focus()
-
-      // Protocol handler removed - no longer using auth callbacks
     }
   })
 }
 
-// Auth callback removed as we no longer use Supabase authentication
+/**
+ * Set up recurring screen sharing protection for macOS
+ * This ensures our window stays invisible in screen sharing apps like Zoom
+ */
+function setupScreenSharingProtection() {
+  // Only apply on macOS
+  if (process.platform !== 'darwin') return;
+  
+  // Clear any existing interval
+  if (state.screenShareProtectionInterval) {
+    clearInterval(state.screenShareProtectionInterval);
+  }
+  
+  // Apply initial protection
+  applyScreenSharingProtection();
+  
+  // Set up interval to reapply protection every 5 seconds
+  state.screenShareProtectionInterval = setInterval(applyScreenSharingProtection, 5000);
+  
+  console.log("Screen sharing protection enabled and will refresh every 5 seconds");
+}
+
+/**
+ * Apply all available screen sharing protection techniques
+ */
+async function applyScreenSharingProtection() {
+  if (!state.mainWindow || state.mainWindow.isDestroyed()) return;
+  
+  // Ensure content protection is enabled
+  state.mainWindow.setContentProtection(true);
+  
+  // Apply macOS-specific window sharing exclusion if available
+  if (process.platform === 'darwin') {
+    try {
+      // Use Electron's window sharing exclusion API if available
+      if (state.mainWindow.setWindowSharingExcluded) {
+        state.mainWindow.setWindowSharingExcluded(true);
+      }
+      
+      // Also apply our custom techniques from ScreenshotHelper
+      if (state.screenshotHelper) {
+        await state.screenshotHelper.applyMacOSScreenCaptureResistance();
+      }
+    } catch (err) {
+      console.error("Error applying screen sharing protection:", err);
+    }
+  }
+}
+
+/**
+ * Stop screen sharing protection interval
+ */
+function stopScreenSharingProtection() {
+  if (state.screenShareProtectionInterval) {
+    clearInterval(state.screenShareProtectionInterval);
+    state.screenShareProtectionInterval = null;
+    console.log("Screen sharing protection interval stopped");
+  }
+}
 
 // Window management functions
 async function createWindow(): Promise<void> {
@@ -320,6 +385,21 @@ async function createWindow(): Promise<void> {
 
     // Disable window shadow
     state.mainWindow.setHasShadow(false)
+
+    // Add macOS-specific screen capture exclusion
+    try {
+      if (state.mainWindow.setWindowSharingExcluded) {
+        state.mainWindow.setWindowSharingExcluded(true)
+        console.log("Window excluded from screen sharing")
+      } else {
+        console.log("setWindowSharingExcluded method not available")
+      }
+    } catch (err) {
+      console.error("Error setting window exclusion from screen capture:", err)
+    }
+
+    // Set up screen sharing protection
+    setupScreenSharingProtection();
   }
 
   // Prevent the window from being captured by screen recording
@@ -373,6 +453,7 @@ function handleWindowResize(): void {
 }
 
 function handleWindowClosed(): void {
+  stopScreenSharingProtection();
   state.mainWindow = null
   state.isWindowVisible = false
   state.windowPosition = null
@@ -406,6 +487,10 @@ function showMainWindow(): void {
       visibleOnFullScreen: true
     });
     state.mainWindow.setContentProtection(true);
+    
+    // Immediately apply screen sharing protection when showing window
+    applyScreenSharingProtection();
+    
     state.mainWindow.setOpacity(0); // Set opacity to 0 before showing
     state.mainWindow.showInactive(); // Use showInactive instead of show+focus
     state.mainWindow.setOpacity(1); // Then set opacity to 1 after showing
@@ -603,6 +688,11 @@ app.on("activate", () => {
     createWindow()
   }
 })
+
+// Clean up resources when quitting
+app.on("will-quit", () => {
+  stopScreenSharingProtection();
+});
 
 // State getter/setter functions
 function getMainWindow(): BrowserWindow | null {

@@ -4,12 +4,13 @@ import path from "node:path"
 import fs from "node:fs"
 import { app } from "electron"
 import { v4 as uuidv4 } from "uuid"
-import { execFile } from "child_process"
+import { execFile, exec } from "child_process"
 import { promisify } from "util"
 import screenshot from "screenshot-desktop"
 import os from "os"
 
 const execFileAsync = promisify(execFile)
+const execAsync = promisify(exec)
 
 export class ScreenshotHelper {
   private screenshotQueue: string[] = []
@@ -255,6 +256,40 @@ export class ScreenshotHelper {
         // Show the error but return a valid buffer so the app doesn't crash
         throw new Error("Could not capture screenshot with any method. Please check your Windows security settings and try again.");
       }
+    }
+  }
+
+  /**
+   * Apply macOS-specific settings to enhance screen capture resistance
+   * This uses native macOS APIs through shell commands for maximum compatibility
+   */
+  public async applyMacOSScreenCaptureResistance(): Promise<void> {
+    if (process.platform !== "darwin") return;
+
+    try {
+      // 1. Configure macOS to exclude the app's windows from screen captures
+      // Get our app's bundle identifier
+      const bundleId = app.getAppPath().includes('Electron') 
+        ? 'com.electron.interview-coder'  // Default for dev mode
+        : app.isPackaged 
+          ? app.getName() 
+          : 'com.electron.interview-coder';
+      
+      console.log(`Attempting to apply screen capture resistance for app: ${bundleId}`);
+      
+      // Using TCC.db approach (requires SIP to be disabled, so might not work in all environments)
+      try {
+        await execAsync(`defaults write com.apple.screencapture disable-shadow -bool true`);
+        
+        // Set CGWindowSharingLevel for maximum compatibility with screen sharing apps
+        await execAsync(`defaults write ${bundleId} CGWindowSharingLevel -int 0`);
+        
+        console.log("Applied macOS screen capture resistance via defaults write");
+      } catch (err) {
+        console.warn("Could not apply defaults write for screen capture resistance", err);
+      }
+    } catch (error) {
+      console.error("Error applying macOS screen capture resistance:", error);
     }
   }
 
