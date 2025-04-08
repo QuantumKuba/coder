@@ -366,7 +366,7 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
           return { success: false, error: "API key required" };
         }
         
-        await deps.processingHelper?.refineSolution(optimizationType, prompt);
+        await deps.processingHelper?.refineSolution({ optimizationType, prompt });
         return { success: true };
       } catch (error) {
         console.error("Error refining solution:", error);

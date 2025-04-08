@@ -118,13 +118,43 @@ export const ComplexitySection = ({
   const formatComplexity = (complexity: string | null): string => {
     if (!complexity) return "O(n) - Linear time/space complexity";
     
-    // Return the complexity as is if it already has Big O notation
-    if (complexity.match(/O\([^)]+\)/i)) {
-      return complexity;
+    // Clean up any markdown characters that might cause issues
+    let cleanedComplexity = complexity;
+    
+    // Remove any unclosed markdown formatting (like if the string ends with **)
+    if (cleanedComplexity.includes('**') && 
+        (cleanedComplexity.split('**').length - 1) % 2 !== 0) {
+      // Odd number of ** - either close or remove the last one
+      const parts = cleanedComplexity.split('**');
+      if (parts[parts.length - 1].trim() === '') {
+        // If it's at the end, just remove it
+        cleanedComplexity = parts.slice(0, -1).join('**');
+      } else {
+        // Otherwise close it
+        cleanedComplexity = cleanedComplexity + '**';
+      }
     }
     
-    // Otherwise, add a default Big O
-    return `O(n) - ${complexity}`;
+    // Return the complexity as is if it already has Big O notation with explanation
+    if (cleanedComplexity.match(/O\([^)]+\)/i) && (cleanedComplexity.includes('-') || cleanedComplexity.includes('because'))) {
+      return cleanedComplexity;
+    }
+    
+    // No Big O at all, add a default
+    if (!cleanedComplexity.match(/O\([^)]+\)/i)) {
+      return `O(n) - ${cleanedComplexity}`;
+    }
+    
+    // Has Big O but no delimiter, add one
+    const notation = cleanedComplexity.match(/O\([^)]+\)/i)?.[0] || 'O(n)';
+    const rest = cleanedComplexity.replace(notation, '').trim();
+    
+    if (rest) {
+      return `${notation} - ${rest}`;
+    }
+    
+    // Default case - just return a basic explanation
+    return `${notation} - This represents the algorithmic complexity of the solution.`;
   };
   
   const formattedTimeComplexity = formatComplexity(timeComplexity);
@@ -145,7 +175,7 @@ export const ComplexitySection = ({
             <div className="flex items-start gap-2">
               <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
               <div>
-                <strong>Time:</strong> {formattedTimeComplexity}
+                <strong>Time:</strong> {typeof formattedTimeComplexity === 'string' ? renderFormattedContent(formattedTimeComplexity) : formattedTimeComplexity}
               </div>
             </div>
           </div>
@@ -153,7 +183,7 @@ export const ComplexitySection = ({
             <div className="flex items-start gap-2">
               <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
               <div>
-                <strong>Space:</strong> {formattedSpaceComplexity}
+                <strong>Space:</strong> {typeof formattedSpaceComplexity === 'string' ? renderFormattedContent(formattedSpaceComplexity) : formattedSpaceComplexity}
               </div>
             </div>
           </div>
