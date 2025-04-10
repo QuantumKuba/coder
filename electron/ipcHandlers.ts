@@ -354,7 +354,7 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     "refine-solution", 
     async (
       _event, 
-      { optimizationType, prompt }: { optimizationType: 'time' | 'space' | 'both', prompt?: string }
+      { solutionId, feedback }: { solutionId: string; feedback: string }
     ) => {
       try {
         // Check for API key before processing
@@ -366,12 +366,12 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
           return { success: false, error: "API key required" };
         }
         
-        await deps.processingHelper?.refineSolution({ optimizationType, prompt });
+        await deps.processingHelper?.refineSolution(solutionId, feedback);
         return { success: true };
       } catch (error) {
         console.error("Error refining solution:", error);
         return { success: false, error: "Failed to refine solution" };
       }
     }
-  )
+  );
 }

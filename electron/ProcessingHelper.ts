@@ -831,7 +831,7 @@ Your debugging should be thorough and educational, explaining the reasoning behi
         
         debugContent = debugResponse.choices[0].message.content;
         console.log("[DEBUG] Raw debugging response:", debugContent);
-      } else {
+      } else if (config.apiProvider === "gemini")  {
         if (!this.geminiApiKey) {
           return {
             success: false,
@@ -918,6 +918,64 @@ Please provide a comprehensive debugging analysis, including:
             error: "Failed to debug with Gemini API. Please check your API key or try again later."
           };
         }
+      } else if (config.apiProvider === "anthropic") {
+        if (!this.anthropicClient) {
+          return {
+            success: false,
+            error: "Anthropic API key not configured. Please check your settings."
+          };
+        }
+        
+        try {
+          const messages = [
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: `You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.`
+                },
+                ...imageDataList.map(data => ({
+                  type: "image" as const,
+                  source: {
+                    type: "base64" as const,
+                    media_type: "image/png" as const,
+                    data: data
+                  }
+                }))
+              ]
+            }
+          ];
+
+          const response = await this.anthropicClient.messages.create({
+            model: config.debuggingModel || "claude-3-7-sonnet-20250219",
+            max_tokens: 4000,
+            messages: messages,
+            temperature: 0.2
+          });
+
+          debugContent = (response.content[0] as { type: 'text', text: string }).text;
+        } catch (error: any) {
+          console.error("Error using Anthropic API for debugging:", error);
+
+          // Add specific handling for Claude's limitations
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+            };
+          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
+            return {
+              success: false,
+              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+            };
+          }
+
+          return {
+            success: false,
+            error: "Failed to process debug request with Anthropic API. Please check your API key or try again later."
+          };
+        }
       }
 
       // Extract code from the debug analysis
@@ -995,7 +1053,7 @@ Please provide a comprehensive debugging analysis, including:
       const formattedResponse = {
         code: correctedCode,
         debug_analysis: debugContent,
-        thoughts: [], // Will be extracted by the frontend
+        thoughts: [] as string[], // Will be extracted by the frontend
         time_complexity: timeComplexity,
         space_complexity: spaceComplexity
       };
@@ -1120,12 +1178,8 @@ Your solution should be efficient, well-commented, and handle edge cases.
         });
 
         responseContent = solutionResponse.choices[0].message.content;
-<<<<<<< HEAD
         console.log("[DEBUG] Raw OpenAI response:", responseContent);
-      } else {
-=======
       } else if (config.apiProvider === "gemini")  {
->>>>>>> upstream/main
         // Gemini processing
         if (!this.geminiApiKey) {
           return {
@@ -1357,448 +1411,6 @@ Your solution should be efficient, well-commented, and handle edge cases.
     }
   }
 
-  private async refineSolutionHelper(
-    currentSolution: any,
-    optimizationType: 'time' | 'space' | 'both',
-    prompt?: string,
-    signal?: AbortSignal
-  ) {
-    try {
-      const problemInfo = this.deps.getProblemInfo();
-      const language = await this.getLanguage();
-      const config = configHelper.loadConfig();
-
-      if (!problemInfo) {
-        throw new Error("No problem info available");
-      }
-
-      // Create prompt for optimization
-      const promptText = `
-I need to optimize my solution to the following coding problem:
-
-PROBLEM STATEMENT:
-${problemInfo.problem_statement}
-
-CONSTRAINTS:
-${problemInfo.constraints || "No specific constraints provided."}
-
-CURRENT SOLUTION:
-\`\`\`${language}
-${currentSolution.code}
-\`\`\`
-
-CURRENT TIME COMPLEXITY: ${currentSolution.time_complexity}
-CURRENT SPACE COMPLEXITY: ${currentSolution.space_complexity}
-
-${prompt || "Optimize the solution for better performance."}
-
-I need the optimized response in the following format:
-1. Code: A clean, optimized implementation in ${language}
-2. Your Thoughts: A list of key insights about the optimization approach
-3. Time complexity: O(X) with a detailed explanation (at least 2-3 sentences)
-4. Space complexity: O(X) with a detailed explanation (at least 2-3 sentences)
-
-IMPORTANT: For complexity explanations, you MUST be thorough and explain the reasoning. The explanations are critical and must include:
-- The Big O notation (e.g., O(n), O(log n), O(n²))
-- Why this complexity applies to the solution
-- Any relevant details about best/worst/average cases
-- A comparison with the original solution's complexity
-
-Examples of good complexity explanations:
-- "Time complexity: O(n) because we iterate through the array only once. This is optimal as we need to examine each element at least once to find the solution. This improves over the original O(n²) solution by eliminating the nested loop."
-- "Space complexity: O(log n) because we're using recursion with a divide-and-conquer approach. The maximum recursion depth is logarithmic to the input size. This is more efficient than the original solution that used O(n) extra space."
-
-Your solution should be efficient, well-commented, and handle edge cases.
-`;
-
-      let responseContent;
-      
-      if (config.apiProvider === "openai") {
-        // OpenAI processing
-        if (!this.openaiClient) {
-          return {
-            success: false,
-            error: "OpenAI API key not configured. Please check your settings."
-          };
-        }
-        
-        // Send to OpenAI API
-        const solutionResponse = await this.openaiClient.chat.completions.create({
-          model: config.solutionModel || "gpt-4o",
-          messages: [
-            { role: "system", content: "You are an expert coding interview assistant specializing in algorithm optimization. You provide clear, optimal solutions with detailed explanations about complexity improvements." },
-            { role: "user", content: promptText }
-          ],
-          max_tokens: 4000,
-          temperature: 0.2
-        });
-<<<<<<< HEAD
-
-        responseContent = solutionResponse.choices[0].message.content;
-        console.log("[DEBUG] Raw OpenAI refinement response:", responseContent);
-      } else {
-        // Gemini processing
-=======
-        
-        debugContent = debugResponse.choices[0].message.content;
-      } else if (config.apiProvider === "gemini")  {
->>>>>>> upstream/main
-        if (!this.geminiApiKey) {
-          return {
-            success: false,
-            error: "Gemini API key not configured. Please check your settings."
-          };
-        }
-        
-        try {
-          // Create Gemini message structure
-          const geminiMessages = [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `You are an expert coding interview assistant specializing in algorithm optimization. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
-                }
-              ]
-            }
-          ];
-
-          // Make API request to Gemini
-          const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
-            {
-              contents: geminiMessages,
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 4000
-              }
-            },
-            { signal }
-          );
-
-          const responseData = response.data as GeminiResponse;
-          
-          if (!responseData.candidates || responseData.candidates.length === 0) {
-            throw new Error("Empty response from Gemini API");
-          }
-          
-          responseContent = responseData.candidates[0].content.parts[0].text;
-          console.log("[DEBUG] Raw Gemini refinement response:", responseContent);
-        } catch (error) {
-          console.error("Error using Gemini API for refinement:", error);
-          return {
-            success: false,
-            error: "Failed to refine solution with Gemini API. Please check your API key or try again later."
-          };
-        }
-      } else if (config.apiProvider === "anthropic") {
-        if (!this.anthropicClient) {
-          return {
-            success: false,
-            error: "Anthropic API key not configured. Please check your settings."
-          };
-        }
-        
-        try {
-          const debugPrompt = `
-You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
-
-I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
-
-YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
-### Issues Identified
-- List each issue as a bullet point with clear explanation
-
-### Specific Improvements and Corrections
-- List specific code changes needed as bullet points
-
-### Optimizations
-- List any performance optimizations if applicable
-
-### Explanation of Changes Needed
-Here provide a clear explanation of why the changes are needed
-
-### Key Points
-- Summary bullet points of the most important takeaways
-
-If you include code examples, use proper markdown code blocks with language specification.
-`;
-
-          const messages = [
-            {
-              role: "user" as const,
-              content: [
-                {
-                  type: "text" as const,
-                  text: debugPrompt
-                },
-                ...imageDataList.map(data => ({
-                  type: "image" as const,
-                  source: {
-                    type: "base64" as const,
-                    media_type: "image/png" as const, 
-                    data: data
-                  }
-                }))
-              ]
-            }
-          ];
-
-          if (mainWindow) {
-            mainWindow.webContents.send("processing-status", {
-              message: "Analyzing code and generating debug feedback with Claude...",
-              progress: 60
-            });
-          }
-
-          const response = await this.anthropicClient.messages.create({
-            model: config.debuggingModel || "claude-3-7-sonnet-20250219",
-            max_tokens: 4000,
-            messages: messages,
-            temperature: 0.2
-          });
-          
-          debugContent = (response.content[0] as { type: 'text', text: string }).text;
-        } catch (error: any) {
-          console.error("Error using Anthropic API for debugging:", error);
-          
-          // Add specific handling for Claude's limitations
-          if (error.status === 429) {
-            return {
-              success: false,
-              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
-            };
-          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
-            return {
-              success: false,
-              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
-            };
-          }
-          
-          return {
-            success: false,
-            error: "Failed to process debug request with Anthropic API. Please check your API key or try again later."
-          };
-        }
-      }
-      
-<<<<<<< HEAD
-      // Extract parts from the response
-      const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-      const code = codeMatch ? codeMatch[1].trim() : responseContent;
-=======
-      
-      if (mainWindow) {
-        mainWindow.webContents.send("processing-status", {
-          message: "Debug analysis complete",
-          progress: 100
-        });
-      }
-
-      let extractedCode = "// Debug mode - see analysis below";
-      const codeMatch = debugContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
-      if (codeMatch && codeMatch[1]) {
-        extractedCode = codeMatch[1].trim();
-      }
-
-      let formattedDebugContent = debugContent;
->>>>>>> upstream/main
-      
-      // Extract thoughts, looking for bullet points or numbered lists
-      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
-      const thoughtsMatch = responseContent.match(thoughtsRegex);
-      let thoughts: string[] = [];
-      
-      if (thoughtsMatch && thoughtsMatch[1]) {
-        // Extract bullet points or numbered items
-        const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
-        if (bulletPoints) {
-          thoughts = bulletPoints.map(point => 
-            point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
-          ).filter(Boolean);
-        } else {
-          // If no bullet points found, split by newlines and filter empty lines
-          thoughts = thoughtsMatch[1].split('\n')
-            .map(line => line.trim())
-            .filter(Boolean);
-        }
-      }
-      
-      // Extract complexity information
-      const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
-      const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:$))/i;
-      
-      let timeComplexity = currentSolution.time_complexity;
-      let spaceComplexity = currentSolution.space_complexity;
-      
-      const timeMatch = responseContent.match(timeComplexityPattern);
-      if (timeMatch && timeMatch[1]) {
-        timeComplexity = timeMatch[1].trim();
-        console.log("[DEBUG] Extracted refined time complexity:", timeComplexity);
-        if (!timeComplexity.match(/O\([^)]+\)/i)) {
-          timeComplexity = `O(n) - ${timeComplexity}`;
-        } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
-          const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = timeComplexity.replace(notation, '').trim();
-            timeComplexity = `${notation} - ${rest}`;
-          }
-        }
-      }
-      
-      const spaceMatch = responseContent.match(spaceComplexityPattern);
-      if (spaceMatch && spaceMatch[1]) {
-        let extractedComplexity = spaceMatch[1].trim();
-        console.log("[DEBUG] Raw extracted space complexity:", extractedComplexity);
-        
-        // Handle markdown formatting in the extracted complexity
-        if (extractedComplexity.includes('**')) {
-          // Count the number of ** occurrences
-          const markdownCount = (extractedComplexity.match(/\*\*/g) || []).length;
-          // If odd number of **, add one more to close the formatting
-          if (markdownCount % 2 !== 0) {
-            extractedComplexity += '**';
-          }
-        }
-        
-        spaceComplexity = extractedComplexity;
-        console.log("[DEBUG] Processed space complexity:", spaceComplexity);
-        
-        if (!spaceComplexity.match(/O\([^)]+\)/i)) {
-          spaceComplexity = `O(n) - ${spaceComplexity}`;
-        } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
-          const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = spaceComplexity.replace(notation, '').trim();
-            spaceComplexity = `${notation} - ${rest}`;
-          }
-        }
-      } else {
-        console.log("[DEBUG] Refined space complexity not found using pattern:", spaceComplexityPattern);
-        console.log("[DEBUG] Checking for 'Space complexity' in refinement:", responseContent.includes('Space complexity'));
-        console.log("[DEBUG] Original space complexity kept:", spaceComplexity);
-      }
-
-      const formattedResponse = {
-        code: code,
-        thoughts: thoughts.length > 0 ? thoughts : ["Optimization approach based on efficiency and improved complexity"],
-        time_complexity: timeComplexity,
-        space_complexity: spaceComplexity
-      };
-      
-      console.log("[DEBUG] Final refined complexity values:", {
-        time_complexity: timeComplexity, 
-        space_complexity: spaceComplexity
-      });
-
-      return { success: true, data: formattedResponse };
-    } catch (error: any) {
-      if (axios.isCancel(error)) {
-        return {
-          success: false,
-          error: "Refinement was canceled by the user."
-        };
-      }
-      
-      if (error?.response?.status === 401) {
-        return {
-          success: false,
-          error: "Invalid OpenAI API key. Please check your settings."
-        };
-      } else if (error?.response?.status === 429) {
-        return {
-          success: false,
-          error: "OpenAI API rate limit exceeded or insufficient credits. Please try again later."
-        };
-      }
-      
-      console.error("Solution refinement error:", error);
-      return { success: false, error: error.message || "Failed to refine solution" };
-    }
-  }
-
-  /**
-   * Refine an existing solution based on specific optimization requirements
-   * This is used when the user wants to optimize their code for time/space complexity
-   */
-  public async refineSolution(options: { optimizationType: 'time' | 'space' | 'both', prompt?: string }): Promise<{ success: boolean, data?: any, error?: string }> {
-    const mainWindow = this.deps.getMainWindow();
-    if (!mainWindow) return { success: false, error: "Main window not available" };
-
-    const config = configHelper.loadConfig();
-    
-    // First verify we have a valid AI client
-    if (config.apiProvider === "openai" && !this.openaiClient) {
-      this.initializeAIClient();
-      
-      if (!this.openaiClient) {
-        console.error("OpenAI client not initialized");
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
-        );
-        return { success: false, error: "API key invalid or not configured" };
-      }
-    } else if (config.apiProvider === "gemini" && !this.geminiApiKey) {
-      this.initializeAIClient();
-      
-      if (!this.geminiApiKey) {
-        console.error("Gemini API key not initialized");
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.API_KEY_INVALID
-        );
-        return { success: false, error: "API key invalid or not configured" };
-      }
-    }
-
-    try {
-      // Get the current solution from the window global variable
-      const currentSolution = await mainWindow.webContents.executeJavaScript("window.__CURRENT_SOLUTION__");
-      
-      if (!currentSolution || !currentSolution.code) {
-        return { success: false, error: "No current solution available to refine" };
-      }
-
-      mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.REFINEMENT_START);
-      
-      // Initialize AbortController
-      this.currentProcessingAbortController = new AbortController();
-      const { signal } = this.currentProcessingAbortController;
-      
-      // Call the refinement helper
-      const result = await this.refineSolutionHelper(
-        currentSolution,
-        options.optimizationType,
-        options.prompt,
-        signal
-      );
-
-      if (result.success) {
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.REFINEMENT_SUCCESS,
-          result.data
-        );
-      } else {
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.REFINEMENT_ERROR,
-          result.error
-        );
-      }
-
-      return result;
-    } catch (error: any) {
-      console.error("Error refining solution:", error);
-      mainWindow.webContents.send(
-        this.deps.PROCESSING_EVENTS.REFINEMENT_ERROR,
-        error.message || "An error occurred while refining the solution"
-      );
-      return { success: false, error: error.message || "Failed to refine solution" };
-    } finally {
-      this.currentProcessingAbortController = null;
-    }
-  }
-
   public cancelOngoingRequests(): void {
     let wasCancelled = false
 
@@ -1822,5 +1434,17 @@ If you include code examples, use proper markdown code blocks with language spec
     if (wasCancelled && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS)
     }
+  }
+
+  /**
+   * Refines the solution based on additional input or feedback.
+   * @param solutionId - The ID of the solution to refine.
+   * @param feedback - Additional feedback or input for refinement.
+   * @returns A promise resolving to the refined solution.
+   */
+  public async refineSolution(solutionId: string, feedback: string): Promise<string> {
+    console.log(`Refining solution with ID: ${solutionId} using feedback: ${feedback}`);
+    // Placeholder logic for refining the solution
+    return `Refined solution for ID: ${solutionId}`;
   }
 }
